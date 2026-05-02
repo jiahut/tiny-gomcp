@@ -18,6 +18,7 @@ function runObscura(url: string): string {
             encoding: 'utf-8',
             env: process.env,
             maxBuffer: config.maxBuffer,
+            stdio: ['pipe', 'pipe', 'ignore'],
         });
         return html;
     } catch (error: any) {
@@ -28,12 +29,28 @@ function runObscura(url: string): string {
     }
 }
 
+// HTML 预处理: 移除 script/style/head 等非内容元素
+function cleanHtml(html: string): string {
+    const $ = cheerio.load(html);
+    $('script, style, noscript, head').remove();
+    return $.html();
+}
+
 // Fetch 功能: HTML -> Markdown
 function fetchUrl(url: string) {
-    const html = runObscura(url);
+    const rawHtml = runObscura(url);
+    const html = cleanHtml(rawHtml);
     const turndownService = new TurndownService({ headingStyle: 'atx' });
     const markdown = turndownService.turndown(html);
-    console.log(markdown);
+    console.log(postClean(markdown));
+}
+
+// 后处理: 清理残留的 CSS 选择器规则等噪音
+function postClean(text: string): string {
+    return text
+        .replace(/(?:^|\n)[^\n]*\{[^}]*\}[^\n]*/g, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
 }
 
 // DuckDuckGo 搜索功能: 解析 HTML 返回条目

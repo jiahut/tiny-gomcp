@@ -1,0 +1,27 @@
+{
+  "name": "tiny-gomcp",
+  "version": "1.0.0",
+  "description": "CLI tool for web fetching and search via obscura",
+  "main": "dist/index.js",
+  "bin": {
+    "tiny-gomcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["cli", "web", "fetch", "search"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "turndown": "^7.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/turndown": "^5.0.6",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  }
+}

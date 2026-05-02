@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import * as cheerio from 'cheerio';
 import TurndownService from 'turndown';
 
@@ -9,66 +9,54 @@ const config = {
   searchUrl:  process.env.TINY_GOMCP_SEARCH   || 'https://html.duckduckgo.com/html/',
 };
 
+const DOM_CLEANUP = `(function(){document.querySelectorAll("script,style,noscript").forEach(e=>e.remove());return document.body.innerHTML})()`;
+
 // 调用 obscura 的底层封装
-function runObscura(url: string): string {
-    try {
-        // 使用 -q 静默输出，避免混入无关的日志信息
-        const cmd = `${config.obscuraCmd} fetch -q "${url}"`;
-        const html = execSync(cmd, {
-            encoding: 'utf-8',
-            env: process.env,
-            maxBuffer: config.maxBuffer,
-            stdio: ['pipe', 'pipe', 'ignore'],
-        });
-        return html;
-    } catch (error: any) {
-        console.error("Error executing obscura:", error.message);
-        if (error.stdout) console.error("Stdout:", error.stdout);
-        if (error.stderr) console.error("Stderr:", error.stderr);
+function runObscura(url: string, evalScript?: string): string {
+    const args = ['fetch', '-q'];
+    if (evalScript) args.push('-e', evalScript);
+    args.push(url);
+
+    const result = spawnSync(config.obscuraCmd, args, {
+        encoding: 'utf-8',
+        env: process.env,
+        maxBuffer: config.maxBuffer,
+        stdio: ['pipe', 'pipe', 'ignore'],
+    });
+
+    if (result.error) {
+        console.error("Error executing obscura:", result.error.message);
         process.exit(1);
     }
+    if (result.status !== 0) {
+        console.error("obscura exited with code", result.status);
+        process.exit(1);
+    }
+    return result.stdout;
 }
 
-// HTML 预处理: 移除 script/style/head 等非内容元素
-function cleanHtml(html: string): string {
-    const $ = cheerio.load(html);
-    $('script, style, noscript, head').remove();
-    return $.html();
-}
-
-// Fetch 功能: HTML -> Markdown
+// Fetch 功能: 获取渲染后的 body innerHTML -> turndown 转为 markdown
 function fetchUrl(url: string) {
-    const rawHtml = runObscura(url);
-    const html = cleanHtml(rawHtml);
+    const html = runObscura(url, DOM_CLEANUP);
     const turndownService = new TurndownService({ headingStyle: 'atx' });
-    const markdown = turndownService.turndown(html);
-    console.log(postClean(markdown));
-}
-
-// 后处理: 清理残留的 CSS 选择器规则等噪音
-function postClean(text: string): string {
-    return text
-        .replace(/(?:^|\n)[^\n]*\{[^}]*\}[^\n]*/g, '')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
+    console.log(turndownService.turndown(html));
 }
 
 // DuckDuckGo 搜索功能: 解析 HTML 返回条目
 function searchDuckDuckGo(query: string) {
     const searchUrl = `${config.searchUrl}?q=${encodeURIComponent(query)}`;
     const html = runObscura(searchUrl);
-    
+
     const $ = cheerio.load(html);
     const results: string[] = [];
-    
+
     $('.result').each((i, el) => {
         const title = $(el).find('.result__title').text().trim();
         const rawHref = $(el).find('.result__url').attr('href') || '';
         const snippet = $(el).find('.result__snippet').text().trim();
-        
+
         if (title && snippet) {
             let actualUrl = rawHref;
-            // 提取真实的链接
             const urlMatch = rawHref.match(/uddg=([^&]+)/);
             if (urlMatch) {
                 actualUrl = decodeURIComponent(urlMatch[1]);
@@ -78,7 +66,7 @@ function searchDuckDuckGo(query: string) {
             results.push(`${results.length + 1}. ${title}\n   Link: ${actualUrl}\n   Snippet: ${snippet}\n`);
         }
     });
-    
+
     console.log(`Search results for: ${query}\n`);
     console.log(results.join('\n'));
 }
